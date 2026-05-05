@@ -32,7 +32,7 @@ export default function CTA() {
             className="text-[13px] text-gray-500 px-1"
             style={{ fontFamily: "var(--font-inter)" }}
           >
-            Free · Private · No account needed
+            Free · Private · No Payment Needed
           </span>
         </div>
       </div>
