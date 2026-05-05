@@ -16,6 +16,12 @@ from services.pdf import extract_text_from_bytes, MAX_SIZE_MB
 from services.auth import verify_firebase_token
 from agents.analysis import analyze_report
 from agents.chat import chat_with_report
+from services.groq_client import extract_text_from_image_bytes
+
+# Image upload limits
+MAX_IMAGE_MB = 5
+MAX_IMAGE_BYTES = int(MAX_IMAGE_MB * 1024 * 1024)
+ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
 
 app = FastAPI(title="Health Insights Agent API", version="1.0.0")
 
@@ -141,6 +147,69 @@ async def analyze_text(
         report_text=request.text,
         page_count=1,
         char_count=len(request.text),
+    )
+
+
+@app.post("/analyze-image", response_model=AnalysisResponse)
+async def analyze_image(
+    file: UploadFile = File(...),
+    user: dict = Depends(verify_firebase_token),
+):
+    """
+    Extract text from an image using vision AI, then analyze it.
+    Accepts JPEG, PNG, WebP. Max 5 MB.
+    Requires: Authorization: Bearer <Firebase ID token>
+    """
+    content_type = file.content_type or ""
+    if content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail="Only image files are accepted (JPEG, PNG, WebP)."
+        )
+
+    # Read with byte cap
+    chunks: list[bytes] = []
+    total = 0
+    CHUNK = 64 * 1024
+    while True:
+        chunk = await file.read(CHUNK)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > MAX_IMAGE_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Image too large. Maximum allowed size is {MAX_IMAGE_MB} MB."
+            )
+        chunks.append(chunk)
+
+    image_bytes = b"".join(chunks)
+
+    # Extract text via vision model
+    try:
+        report_text = extract_text_from_image_bytes(image_bytes, mime_type=content_type)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=f"Image text extraction failed: {str(e)}")
+
+    if not report_text.strip():
+        raise HTTPException(
+            status_code=422,
+            detail="Could not extract any text from this image. Make sure the image is clear and contains readable text."
+        )
+
+    # Analyze the extracted text
+    try:
+        result = analyze_report(report_text)
+    except ValueError as e:
+        raise HTTPException(status_code=500, detail=f"Analysis parsing failed: {str(e)}")
+
+    return AnalysisResponse(
+        analysis=result["analysis"],
+        analysis_raw=result["analysis_raw"],
+        model_used=result["model_used"],
+        report_text=report_text,
+        page_count=1,
+        char_count=len(report_text),
     )
 
 

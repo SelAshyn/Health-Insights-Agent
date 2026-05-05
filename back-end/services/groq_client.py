@@ -4,6 +4,7 @@ Tries models in order — if one fails or is rate-limited, falls back to the nex
 """
 
 import os
+import base64
 from groq import Groq
 from groq import RateLimitError, APIStatusError
 
@@ -14,6 +15,13 @@ MODELS = [
     "llama-3.1-8b-instant",      # secondary — faster, smaller
     "gemma2-9b-it",              # tertiary
     "mixtral-8x7b-32768",        # fallback
+]
+
+# Vision-capable models (support image input)
+VISION_MODELS = [
+    "meta-llama/llama-4-scout-17b-16e-instruct",  # primary vision model
+    "llama-3.2-90b-vision-preview",               # fallback vision
+    "llama-3.2-11b-vision-preview",               # smaller fallback
 ]
 
 _client: Groq | None = None
@@ -55,13 +63,62 @@ def chat_with_cascade(
             return content, model
 
         except RateLimitError as e:
-            # Rate limited on this model — try the next one
             last_error = e
             continue
 
         except APIStatusError as e:
-            # Model unavailable or other API error — try next
             last_error = e
             continue
 
     raise RuntimeError(f"All Groq models failed. Last error: {last_error}")
+
+
+def extract_text_from_image_bytes(image_bytes: bytes, mime_type: str = "image/jpeg") -> str:
+    """
+    Use a Groq vision model to extract all text from an image.
+    Returns the extracted text as a plain string.
+    Raises RuntimeError if all vision models fail.
+    """
+    client = get_client()
+    b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
+    data_url = f"data:{mime_type};base64,{b64}"
+
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "image_url",
+                    "image_url": {"url": data_url},
+                },
+                {
+                    "type": "text",
+                    "text": (
+                        "This is a medical lab report or health report image. "
+                        "Extract ALL text from this image exactly as it appears — "
+                        "preserve numbers, units, reference ranges, test names, and values. "
+                        "Output only the extracted text, no commentary."
+                    ),
+                },
+            ],
+        }
+    ]
+
+    last_error = None
+    for model in VISION_MODELS:
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=0.1,
+                max_tokens=4096,
+            )
+            return response.choices[0].message.content or ""
+        except RateLimitError as e:
+            last_error = e
+            continue
+        except APIStatusError as e:
+            last_error = e
+            continue
+
+    raise RuntimeError(f"All vision models failed. Last error: {last_error}")

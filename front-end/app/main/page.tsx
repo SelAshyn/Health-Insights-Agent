@@ -10,6 +10,8 @@ import { SAMPLE_REPORT_TEXT, SAMPLE_REPORT_FILENAME } from "@/lib/sampleReport";
 
 const MAX_SIZE_MB = 1.5;
 const MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024;
+const MAX_IMAGE_MB = 5;
+const MAX_IMAGE_BYTES = MAX_IMAGE_MB * 1024 * 1024;
 const MAX_PAGES_ESTIMATE = 50; // shown in UI hint
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -252,6 +254,10 @@ export default function MainPage() {
   const [chatLoading, setChatLoading] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const [uploadTab, setUploadTab] = useState<"pdf" | "image" | "text">("pdf");
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [pastedText, setPastedText] = useState<string>("");
   const [slowWarning, setSlowWarning] = useState(false);
   const slowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -546,6 +552,146 @@ export default function MainPage() {
     }
   }
 
+  // ── Image upload + Analyze ──────────────────────────────────────────────────
+  async function handleImageAnalyze() {
+    if (!selectedImage || !user) return;
+    setStage("analyzing");
+    setSlowWarning(false);
+    slowTimerRef.current = setTimeout(() => setSlowWarning(true), 8000);
+    setErrorMsg(null);
+    setUploadProgress(0);
+    let newSessionId: string | null = null;
+
+    try {
+      const timestamp = Date.now();
+      const sessionRef = await addDoc(collection(db, "sessions"), {
+        userId: user.uid,
+        fileName: selectedImage.name,
+        storageUrl: "",
+        storagePath: "",
+        createdAt: timestamp,
+        status: "analyzing",
+      });
+      newSessionId = sessionRef.id;
+      setSessionId(sessionRef.id);
+      setUploadProgress(30);
+
+      const formData = new FormData();
+      formData.append("file", selectedImage);
+      const response = await fetch(`${API_URL}/analyze-image`, {
+        method: "POST",
+        headers: { ...await getAuthHeaders(user) },
+        body: formData,
+      });
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.detail || `Analysis failed (${response.status})`);
+      }
+      const result = await response.json();
+      setUploadProgress(90);
+
+      const sessionTitle = generateSessionTitle(result.analysis?.summary, selectedImage.name);
+      await updateDoc(doc(db, "sessions", sessionRef.id), {
+        status: "done",
+        analysis: result.analysis,
+        analysisRaw: result.analysis_raw ?? "",
+        reportText: result.report_text ?? "",
+        modelUsed: result.model_used ?? "",
+        sessionTitle,
+      });
+
+      setAnalysis(result.analysis);
+      setAnalysisRaw(result.analysis_raw);
+      setReportText(result.report_text);
+      setModelUsed(result.model_used);
+      setFileName(selectedImage.name);
+      setChatMessages([]);
+      setUploadProgress(100);
+      setSlowWarning(false);
+      if (slowTimerRef.current) clearTimeout(slowTimerRef.current);
+      setStage("result");
+
+    } catch (err: unknown) {
+      console.error(err);
+      if (slowTimerRef.current) clearTimeout(slowTimerRef.current);
+      setSlowWarning(false);
+      if (newSessionId) {
+        await updateDoc(doc(db, "sessions", newSessionId), { status: "error" }).catch(() => {});
+      }
+      setErrorMsg(err instanceof Error ? err.message : "Something went wrong. Please try again.");
+      setStage("upload");
+    }
+  }
+
+  // ── Pasted text Analyze ─────────────────────────────────────────────────────
+  async function handleTextAnalyze() {
+    if (!pastedText.trim() || !user) return;
+    setStage("analyzing");
+    setSlowWarning(false);
+    slowTimerRef.current = setTimeout(() => setSlowWarning(true), 8000);
+    setErrorMsg(null);
+    setUploadProgress(0);
+    let newSessionId: string | null = null;
+
+    try {
+      const timestamp = Date.now();
+      const sessionRef = await addDoc(collection(db, "sessions"), {
+        userId: user.uid,
+        fileName: "Pasted report",
+        storageUrl: "",
+        storagePath: "",
+        createdAt: timestamp,
+        status: "analyzing",
+      });
+      newSessionId = sessionRef.id;
+      setSessionId(sessionRef.id);
+      setUploadProgress(30);
+
+      const response = await fetch(`${API_URL}/analyze-text`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...await getAuthHeaders(user) },
+        body: JSON.stringify({ text: pastedText, filename: "Pasted report" }),
+      });
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.detail || `Analysis failed (${response.status})`);
+      }
+      const result = await response.json();
+      setUploadProgress(90);
+
+      const sessionTitle = generateSessionTitle(result.analysis?.summary, "Pasted report");
+      await updateDoc(doc(db, "sessions", sessionRef.id), {
+        status: "done",
+        analysis: result.analysis,
+        analysisRaw: result.analysis_raw ?? "",
+        reportText: result.report_text ?? "",
+        modelUsed: result.model_used ?? "",
+        sessionTitle,
+      });
+
+      setAnalysis(result.analysis);
+      setAnalysisRaw(result.analysis_raw);
+      setReportText(result.report_text);
+      setModelUsed(result.model_used);
+      setFileName("Pasted report");
+      setChatMessages([]);
+      setUploadProgress(100);
+      setSlowWarning(false);
+      if (slowTimerRef.current) clearTimeout(slowTimerRef.current);
+      setStage("result");
+
+    } catch (err: unknown) {
+      console.error(err);
+      if (slowTimerRef.current) clearTimeout(slowTimerRef.current);
+      setSlowWarning(false);
+      if (newSessionId) {
+        await updateDoc(doc(db, "sessions", newSessionId), { status: "error" }).catch(() => {});
+      }
+      setErrorMsg(err instanceof Error ? err.message : "Something went wrong. Please try again.");
+      setStage("upload");
+    }
+  }
+
   // ── Chat with history saving ────────────────────────────────────────────────
   async function handleSendMessage(question: string) {
     if (!question || chatLoading) return;
@@ -617,6 +763,9 @@ export default function MainPage() {
   function handleReset() {
     setStage("welcome");
     setSelectedFile(null);
+    setSelectedImage(null);
+    setPastedText("");
+    setUploadTab("pdf");
     setUploadProgress(0);
     setErrorMsg(null);
     setAnalysis(null);
@@ -629,6 +778,7 @@ export default function MainPage() {
     setSlowWarning(false);
     if (slowTimerRef.current) clearTimeout(slowTimerRef.current);
     if (fileInputRef.current) fileInputRef.current.value = "";
+    if (imageInputRef.current) imageInputRef.current.value = "";
   }
 
   return (
@@ -678,58 +828,187 @@ export default function MainPage() {
             </svg>
             Back
           </button>
-          <div onClick={() => !selectedFile && fileInputRef.current?.click()}
-            className={`bg-white border-2 border-dashed rounded-3xl p-12 flex flex-col items-center text-center gap-5 transition-colors
-              ${!selectedFile ? "border-gray-200 hover:border-teal-400 cursor-pointer" : "border-gray-100 cursor-default"}`}>
-            <input ref={fileInputRef} type="file" accept="application/pdf" className="hidden" onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (!file) return;
-              if (file.type !== "application/pdf") { setErrorMsg("Only PDF files are supported."); return; }
-              if (file.size > MAX_SIZE_BYTES) { setErrorMsg(`File too large. Max ${MAX_SIZE_MB} MB. Try compressing the PDF or exporting just the relevant pages.`); return; }
-              setErrorMsg(null);
-              setSelectedFile(file);
-            }} />
-            <div className="w-14 h-14 rounded-2xl bg-teal-50 flex items-center justify-center">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#14b8a6" strokeWidth="1.8" strokeLinecap="round">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                <polyline points="17 8 12 3 7 8" />
-                <line x1="12" y1="3" x2="12" y2="15" />
-              </svg>
+
+          <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+            {/* Tabs */}
+            <div className="flex border-b border-gray-100">
+              {([
+                { key: "pdf",   label: "PDF",        icon: "📄" },
+                { key: "image", label: "Photo / Image", icon: "🖼️" },
+                { key: "text",  label: "Paste text",  icon: "📋" },
+              ] as const).map((tab) => (
+                <button
+                  key={tab.key}
+                  onClick={() => { setUploadTab(tab.key); setErrorMsg(null); }}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-3.5 text-[13px] font-semibold transition-colors
+                    ${uploadTab === tab.key
+                      ? "text-teal-600 border-b-2 border-teal-500 bg-teal-50/50"
+                      : "text-gray-400 hover:text-gray-600 border-b-2 border-transparent"}`}
+                  style={{ fontFamily: "var(--font-sora)" }}
+                >
+                  <span className="text-[15px]">{tab.icon}</span>
+                  <span className="hidden sm:inline">{tab.label}</span>
+                </button>
+              ))}
             </div>
-            {selectedFile ? (
-              <div className="flex flex-col items-center gap-4 w-full">
-                <div className="flex items-center gap-2 bg-teal-50 border border-teal-100 rounded-xl px-4 py-2.5">
-                  <span className="text-[13px] font-semibold text-teal-700">{selectedFile.name}</span>
-                  <span className="text-[12px] text-teal-500">({(selectedFile.size / 1024 / 1024).toFixed(1)} MB)</span>
+
+            <div className="p-6 sm:p-8">
+
+              {/* ── PDF tab ── */}
+              {uploadTab === "pdf" && (
+                <div
+                  onClick={() => !selectedFile && fileInputRef.current?.click()}
+                  className={`border-2 border-dashed rounded-2xl p-8 sm:p-12 flex flex-col items-center text-center gap-5 transition-colors
+                    ${!selectedFile ? "border-gray-200 hover:border-teal-400 cursor-pointer" : "border-gray-100 cursor-default"}`}
+                >
+                  <input ref={fileInputRef} type="file" accept="application/pdf" className="hidden" onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    if (file.type !== "application/pdf") { setErrorMsg("Only PDF files are supported."); return; }
+                    if (file.size > MAX_SIZE_BYTES) { setErrorMsg(`File too large. Max ${MAX_SIZE_MB} MB.`); return; }
+                    setErrorMsg(null);
+                    setSelectedFile(file);
+                  }} />
+                  <div className="w-14 h-14 rounded-2xl bg-teal-50 flex items-center justify-center">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#14b8a6" strokeWidth="1.8" strokeLinecap="round">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                      <polyline points="17 8 12 3 7 8" />
+                      <line x1="12" y1="3" x2="12" y2="15" />
+                    </svg>
+                  </div>
+                  {selectedFile ? (
+                    <div className="flex flex-col items-center gap-4 w-full">
+                      <div className="flex items-center gap-2 bg-teal-50 border border-teal-100 rounded-xl px-4 py-2.5">
+                        <span className="text-[13px] font-semibold text-teal-700 truncate max-w-50">{selectedFile.name}</span>
+                        <span className="text-[12px] text-teal-500 shrink-0">({(selectedFile.size / 1024 / 1024).toFixed(1)} MB)</span>
+                      </div>
+                      <button onClick={(e) => { e.stopPropagation(); handleUploadAndAnalyze(); }}
+                        className="px-7 py-3 text-[14px] font-bold text-white bg-teal-500 rounded-full hover:bg-teal-600 transition-colors shadow-md"
+                        style={{ fontFamily: "var(--font-sora)" }}>
+                        Upload & Analyze →
+                      </button>
+                      <button onClick={(e) => { e.stopPropagation(); setSelectedFile(null); if (fileInputRef.current) fileInputRef.current.value = ""; }}
+                        className="text-[12px] text-gray-400 hover:text-gray-600">
+                        Choose a different file
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div>
+                        <p className="text-[17px] font-bold text-gray-800 mb-1" style={{ fontFamily: "var(--font-sora)" }}>Drop your health report here</p>
+                        <p className="text-[13px] text-gray-400">PDF · Up to {MAX_SIZE_MB} MB · Max {MAX_PAGES_ESTIMATE} pages</p>
+                      </div>
+                      <button onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
+                        className="px-7 py-3 text-[14px] font-bold text-white bg-teal-500 rounded-full hover:bg-teal-600 transition-colors shadow-md"
+                        style={{ fontFamily: "var(--font-sora)" }}>
+                        Choose file
+                      </button>
+                      <button onClick={(e) => { e.stopPropagation(); handleUseSampleReport(); }}
+                        className="text-[13px] text-gray-400 hover:text-teal-600 transition-colors underline underline-offset-2">
+                        or use a sample report
+                      </button>
+                    </>
+                  )}
                 </div>
-                <button onClick={(e) => { e.stopPropagation(); handleUploadAndAnalyze(); }}
-                  className="px-7 py-3 text-[14px] font-bold text-white bg-teal-500 rounded-full hover:bg-teal-600 transition-colors shadow-md"
-                  style={{ fontFamily: "var(--font-sora)" }}>
-                  Upload & Analyze →
-                </button>
-                <button onClick={(e) => { e.stopPropagation(); setSelectedFile(null); if (fileInputRef.current) fileInputRef.current.value = ""; }}
-                  className="text-[12px] text-gray-400 hover:text-gray-600">
-                  Choose a different file
-                </button>
-              </div>
-            ) : (
-              <>
-                <div>
-                  <p className="text-[17px] font-bold text-gray-800 mb-1" style={{ fontFamily: "var(--font-sora)" }}>Drop your health report here</p>
-                  <p className="text-[13px] text-gray-400">PDF · Up to {MAX_SIZE_MB} MB · Max {MAX_PAGES_ESTIMATE} pages</p>
+              )}
+
+              {/* ── Image tab ── */}
+              {uploadTab === "image" && (
+                <div
+                  onClick={() => !selectedImage && imageInputRef.current?.click()}
+                  className={`border-2 border-dashed rounded-2xl p-8 sm:p-12 flex flex-col items-center text-center gap-5 transition-colors
+                    ${!selectedImage ? "border-gray-200 hover:border-teal-400 cursor-pointer" : "border-gray-100 cursor-default"}`}
+                >
+                  <input ref={imageInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+                      setErrorMsg("Only JPEG, PNG, and WebP images are supported.");
+                      return;
+                    }
+                    if (file.size > MAX_IMAGE_BYTES) {
+                      setErrorMsg(`Image too large. Max ${MAX_IMAGE_MB} MB.`);
+                      return;
+                    }
+                    setErrorMsg(null);
+                    setSelectedImage(file);
+                  }} />
+                  <div className="w-14 h-14 rounded-2xl bg-teal-50 flex items-center justify-center">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#14b8a6" strokeWidth="1.8" strokeLinecap="round">
+                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                      <circle cx="8.5" cy="8.5" r="1.5" />
+                      <polyline points="21 15 16 10 5 21" />
+                    </svg>
+                  </div>
+                  {selectedImage ? (
+                    <div className="flex flex-col items-center gap-4 w-full">
+                      {/* Preview */}
+                      <img
+                        src={URL.createObjectURL(selectedImage)}
+                        alt="Report preview"
+                        className="max-h-40 rounded-xl border border-gray-100 object-contain"
+                      />
+                      <div className="flex items-center gap-2 bg-teal-50 border border-teal-100 rounded-xl px-4 py-2.5">
+                        <span className="text-[13px] font-semibold text-teal-700 truncate max-w-50">{selectedImage.name}</span>
+                        <span className="text-[12px] text-teal-500 shrink-0">({(selectedImage.size / 1024 / 1024).toFixed(1)} MB)</span>
+                      </div>
+                      <button onClick={(e) => { e.stopPropagation(); handleImageAnalyze(); }}
+                        className="px-7 py-3 text-[14px] font-bold text-white bg-teal-500 rounded-full hover:bg-teal-600 transition-colors shadow-md"
+                        style={{ fontFamily: "var(--font-sora)" }}>
+                        Extract & Analyze →
+                      </button>
+                      <button onClick={(e) => { e.stopPropagation(); setSelectedImage(null); if (imageInputRef.current) imageInputRef.current.value = ""; }}
+                        className="text-[12px] text-gray-400 hover:text-gray-600">
+                        Choose a different image
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div>
+                        <p className="text-[17px] font-bold text-gray-800 mb-1" style={{ fontFamily: "var(--font-sora)" }}>Upload a photo of your report</p>
+                        <p className="text-[13px] text-gray-400">JPEG · PNG · WebP · Up to {MAX_IMAGE_MB} MB</p>
+                        <p className="text-[12px] text-gray-400 mt-1">AI will read the text from your image automatically</p>
+                      </div>
+                      <button onClick={(e) => { e.stopPropagation(); imageInputRef.current?.click(); }}
+                        className="px-7 py-3 text-[14px] font-bold text-white bg-teal-500 rounded-full hover:bg-teal-600 transition-colors shadow-md"
+                        style={{ fontFamily: "var(--font-sora)" }}>
+                        Choose image
+                      </button>
+                    </>
+                  )}
                 </div>
-                <button onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
-                  className="px-7 py-3 text-[14px] font-bold text-white bg-teal-500 rounded-full hover:bg-teal-600 transition-colors shadow-md"
-                  style={{ fontFamily: "var(--font-sora)" }}>
-                  Choose file
-                </button>
-                <button onClick={(e) => { e.stopPropagation(); handleUseSampleReport(); }}
-                  className="text-[13px] text-gray-400 hover:text-teal-600 transition-colors underline underline-offset-2">
-                  or use a sample report
-                </button>
-              </>
-            )}
+              )}
+
+              {/* ── Text tab ── */}
+              {uploadTab === "text" && (
+                <div className="flex flex-col gap-4">
+                  <div>
+                    <p className="text-[15px] font-bold text-gray-800 mb-1" style={{ fontFamily: "var(--font-sora)" }}>Paste your report text</p>
+                    <p className="text-[13px] text-gray-400">Copy the text from your digital report and paste it below.</p>
+                  </div>
+                  <textarea
+                    value={pastedText}
+                    onChange={(e) => setPastedText(e.target.value)}
+                    placeholder="Paste your lab report text here…&#10;&#10;e.g. Hemoglobin: 13.5 g/dL (Normal: 12.0–16.0)&#10;WBC: 7.2 × 10³/µL (Normal: 4.5–11.0)&#10;..."
+                    rows={10}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-2xl text-[13px] text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-teal-400 focus:border-transparent resize-none leading-relaxed"
+                  />
+                  <div className="flex items-center justify-between">
+                    <span className="text-[12px] text-gray-400">{pastedText.length} characters</span>
+                    <button
+                      onClick={handleTextAnalyze}
+                      disabled={pastedText.trim().length < 20}
+                      className="px-7 py-3 text-[14px] font-bold text-white bg-teal-500 rounded-full hover:bg-teal-600 transition-colors shadow-md disabled:opacity-40 disabled:cursor-not-allowed"
+                      style={{ fontFamily: "var(--font-sora)" }}>
+                      Analyze →
+                    </button>
+                  </div>
+                </div>
+              )}
+
+            </div>
           </div>
+
           {errorMsg && (
             <div className={`px-4 py-3 text-[14px] rounded-xl border ${
               errorMsg.includes("scanned image") || errorMsg.includes("digital version")
