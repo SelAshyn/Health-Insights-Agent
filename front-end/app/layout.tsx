@@ -21,7 +21,10 @@ const sora = Sora({
 
 export const metadata: Metadata = {
   title: "Health Insights Agent",
-  description: "AI-powered health report analysis",
+  description: "AI-powered health report analysis — understand your blood work in plain language",
+  icons: {
+    icon: "/icon.svg",
+  },
 };
 
 export default function RootLayout({
