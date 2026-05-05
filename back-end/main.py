@@ -19,12 +19,19 @@ from agents.chat import chat_with_report
 
 app = FastAPI(title="Health Insights Agent API", version="1.0.0")
 
+# Build allowed origins from FRONTEND_URL (supports comma-separated list for multiple origins)
+# e.g. FRONTEND_URL=https://your-app.vercel.app,https://your-app.onrender.com
+_frontend_url_env = os.getenv("FRONTEND_URL", "")
+_extra_origins = [u.strip() for u in _frontend_url_env.split(",") if u.strip()]
+ALLOWED_ORIGINS = list({
+    "http://localhost:3000",
+    "http://localhost:3001",
+    *_extra_origins,
+})
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        os.getenv("FRONTEND_URL", "http://localhost:3000"),
-        "http://localhost:3000",
-    ],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
