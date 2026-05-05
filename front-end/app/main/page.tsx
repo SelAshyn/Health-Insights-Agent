@@ -252,6 +252,8 @@ export default function MainPage() {
   const [chatLoading, setChatLoading] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [slowWarning, setSlowWarning] = useState(false);
+  const slowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Load session from sidebar ───────────────────────────────────────────────
   useEffect(() => {
@@ -371,6 +373,8 @@ export default function MainPage() {
   async function handleUseSampleReport() {
     if (!user) return;
     setStage("analyzing");
+    setSlowWarning(false);
+    slowTimerRef.current = setTimeout(() => setSlowWarning(true), 8000);
     setErrorMsg(null);
     setUploadProgress(0);
     let newSessionId: string | null = null;
@@ -436,6 +440,8 @@ export default function MainPage() {
   async function handleUploadAndAnalyze() {
     if (!selectedFile || !user) return;
     setStage("analyzing");
+    setSlowWarning(false);
+    slowTimerRef.current = setTimeout(() => setSlowWarning(true), 8000);
     setErrorMsg(null);
     setUploadProgress(0);
     let newSessionId: string | null = null;
@@ -507,10 +513,14 @@ export default function MainPage() {
       setFileName(selectedFile.name);
       setChatMessages([]);
       setUploadProgress(100);
+      setSlowWarning(false);
+      if (slowTimerRef.current) clearTimeout(slowTimerRef.current);
       setStage("result");
 
     } catch (err: unknown) {
       console.error(err);
+      if (slowTimerRef.current) clearTimeout(slowTimerRef.current);
+      setSlowWarning(false);
 
       // ── Compensating cleanup ──────────────────────────────────────────────
       // If the file was uploaded but something failed after, delete it from
@@ -616,6 +626,8 @@ export default function MainPage() {
     setSessionId(null);
     setFileName("");
     setChatMessages([]);
+    setSlowWarning(false);
+    if (slowTimerRef.current) clearTimeout(slowTimerRef.current);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -741,7 +753,14 @@ export default function MainPage() {
           </div>
           <div>
             <p className="text-[20px] font-extrabold text-gray-900 mb-1" style={{ fontFamily: "var(--font-sora)" }}>Reading your report…</p>
-            <p className="text-[14px] text-gray-400">Hang tight — this usually takes 10–20 seconds.</p>
+            {slowWarning ? (
+              <div className="flex flex-col items-center gap-1">
+                <p className="text-[14px] text-amber-500 font-medium">The server is waking up — this can take up to 60 seconds on first use.</p>
+                <p className="text-[13px] text-gray-400">Hang tight, your report will be analyzed automatically.</p>
+              </div>
+            ) : (
+              <p className="text-[14px] text-gray-400">Hang tight — this usually takes 10–20 seconds.</p>
+            )}
           </div>
           <div className="w-full max-w-xs">
             <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
