@@ -1,33 +1,57 @@
 """
 Firebase Auth middleware for FastAPI.
 Verifies the Firebase ID token sent in the Authorization header.
+
+Credential priority:
+  1. FIREBASE_SERVICE_ACCOUNT_JSON env var — JSON string of the service account key
+     (recommended for Render: paste the entire JSON as a single env var)
+  2. GOOGLE_APPLICATION_CREDENTIALS env var — path to a service account JSON file
+     (works locally if you have the file on disk)
+  3. Bare project-ID init — works ONLY on Google Cloud (has ADC available).
+     Will fail on Render/Heroku/etc. with "default credentials not found".
 """
 
 import os
+import json
 import firebase_admin
-from firebase_admin import credentials, auth as firebase_auth
+from firebase_admin import credentials as fb_creds, auth as firebase_auth
 from fastapi import HTTPException, Security
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-# ── Initialize Firebase Admin SDK ─────────────────────────────────────────────
-# The Admin SDK can be initialized with a service account JSON file (for production)
-# or with Application Default Credentials (for local dev if you're logged into gcloud).
-# For simplicity, we use the project ID from env — the SDK will fetch public keys
-# from Google to verify tokens without needing a service account for token verification only.
 
+# ── Initialize Firebase Admin SDK ─────────────────────────────────────────────
 _firebase_initialized = False
 
 def _ensure_initialized():
     global _firebase_initialized
-    if not _firebase_initialized and not firebase_admin._apps:
-        project_id = os.getenv("FIREBASE_PROJECT_ID")
-        if not project_id:
-            raise RuntimeError(
-                "FIREBASE_PROJECT_ID not set. Add it to back-end/.env"
-            )
-        # Initialize with just the project ID — sufficient for token verification
-        firebase_admin.initialize_app(options={"projectId": project_id})
+    if _firebase_initialized or firebase_admin._apps:
         _firebase_initialized = True
+        return
+
+    project_id = os.getenv("FIREBASE_PROJECT_ID")
+    if not project_id:
+        raise RuntimeError("FIREBASE_PROJECT_ID not set.")
+
+    # Option 1: full service account JSON stored as an env var string
+    sa_json_str = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON", "")
+    if sa_json_str:
+        sa_dict = json.loads(sa_json_str)
+        cred = fb_creds.Certificate(sa_dict)
+        firebase_admin.initialize_app(cred, options={"projectId": project_id})
+        _firebase_initialized = True
+        return
+
+    # Option 2: path to a service account JSON file on disk
+    sa_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "")
+    if sa_path and os.path.isfile(sa_path):
+        cred = fb_creds.Certificate(sa_path)
+        firebase_admin.initialize_app(cred, options={"projectId": project_id})
+        _firebase_initialized = True
+        return
+
+    # Option 3: ADC (only works on Google Cloud — will fail on Render)
+    firebase_admin.initialize_app(options={"projectId": project_id})
+    _firebase_initialized = True
 
 
 # ── Bearer token extractor ────────────────────────────────────────────────────
