@@ -9,11 +9,6 @@ export default function Hero() {
       {/* ── LEFT: copy ── */}
       <div>
         {/* Eyebrow label */}
-        <div className="inline-flex items-center gap-2 text-[12px] font-semibold tracking-widest uppercase text-teal-600 bg-teal-50 border border-teal-100 px-3.5 py-1.5 rounded-full mb-7"
-          style={{ fontFamily: "var(--font-inter)" }}>
-          <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-pulse" />
-          AI-powered health analysis
-        </div>
 
         {/* Headline — Sora, large, tight leading */}
         <h1
