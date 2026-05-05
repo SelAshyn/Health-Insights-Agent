@@ -7,12 +7,11 @@ RUN apt-get update && apt-get install -y \
     libmupdf-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy and install Python dependencies first (layer caching)
-COPY requirements.txt .
+# Copy back-end files
+COPY back-end/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
-COPY . .
+COPY back-end/ .
 
 # Render sets $PORT dynamically
 CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}
