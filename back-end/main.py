@@ -60,7 +60,7 @@ class ChatResponse(BaseModel):
 @app.get("/health")
 def health_check():
     """Public endpoint — no auth required."""
-    return {"status": "ok"}
+    return {"status": "ok", "cors": "wildcard", "version": "2024-05-05-v2"}
 
 
 @app.post("/analyze", response_model=AnalysisResponse)
