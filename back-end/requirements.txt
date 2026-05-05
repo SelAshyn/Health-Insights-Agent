@@ -7,3 +7,4 @@ python-dotenv
 httpx
 pydantic
 firebase-admin
+json-repair

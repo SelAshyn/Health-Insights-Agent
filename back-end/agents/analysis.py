@@ -22,32 +22,37 @@ RULES:
 
 ANALYSIS_TEMPLATE = """
 Analyze this health report and return a JSON object with EXACTLY this structure.
-Do not include any text outside the JSON.
+Do not include any text outside the JSON. Do not use markdown code fences.
+All string values must be valid JSON — escape any quotes inside strings.
 
 {{
   "summary": "2-3 warm, friendly sentences giving an overall picture. Start positive if possible.",
   "results": [
     {{
-      "name": "Plain English name of the test (e.g. 'Blood Sugar')",
+      "name": "Plain English name of the test (e.g. Blood Sugar)",
       "value": "The actual result value with unit",
       "range": "Normal range with unit",
-      "status": "normal" | "low" | "high",
-      "what_it_means": "1-2 sentences in plain language — what does this test measure and what does this result mean for the patient",
-      "what_to_do": "1-2 specific, practical actions the patient can take"
+      "status": "normal",
+      "what_it_means": "1-2 sentences in plain language about what this test measures and what this result means",
+      "what_to_do": "1-2 specific practical actions the patient can take"
     }}
   ],
   "key_findings": [
-    "Short bullet — plain language pattern or concern (e.g. 'Your iron is low — this could explain why you feel tired')"
+    "Short plain-language pattern or concern"
   ],
   "next_steps": [
-    "Numbered action step — specific and practical"
+    "Specific practical action step"
   ],
-  "encouragement": "2-3 warm, motivating sentences to end on a positive note."
+  "encouragement": "2-3 warm motivating sentences to end on a positive note."
 }}
 
-Only include results that are abnormal OR clinically important.
-key_findings should have 2-4 items max.
-next_steps should have 3-5 items max.
+Rules:
+- status must be exactly one of: normal, low, high
+- Only include results that are abnormal OR clinically important
+- key_findings: 2-4 items max
+- next_steps: 3-5 items max
+- No trailing commas
+- No comments inside the JSON
 
 HEALTH REPORT:
 {report_text}
@@ -68,12 +73,22 @@ def analyze_report(report_text: str) -> dict:
         max_tokens=3000,
     )
 
-    # Extract JSON from the response (model sometimes wraps in ```json ... ```)
+    # Extract the JSON block (model sometimes wraps in ```json ... ```)
     json_match = re.search(r'\{[\s\S]*\}', raw)
     if not json_match:
         raise ValueError("Model did not return valid JSON")
 
-    structured = json.loads(json_match.group())
+    json_str = json_match.group()
+
+    # Try strict parse first, then fall back to json-repair for malformed output
+    try:
+        structured = json.loads(json_str)
+    except json.JSONDecodeError:
+        try:
+            from json_repair import repair_json
+            structured = json.loads(repair_json(json_str))
+        except Exception as e:
+            raise ValueError(f"Could not parse model response as JSON: {e}")
 
     return {
         "analysis": structured,
