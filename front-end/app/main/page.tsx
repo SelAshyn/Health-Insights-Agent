@@ -166,28 +166,28 @@ function ChatSection({ messages, onSend, loading, sessionId }: {
   ];
 
   return (
-    <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden" style={{ fontFamily: "var(--font-inter)" }}>
+    <div className="bg-white rounded-2xl sm:rounded-3xl border border-gray-100 overflow-hidden" style={{ fontFamily: "var(--font-inter)" }}>
       {/* Header */}
-      <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-3">
-        <div className="w-8 h-8 rounded-full bg-teal-500 flex items-center justify-center">
+      <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-100 flex items-center gap-3">
+        <div className="w-8 h-8 rounded-full bg-teal-500 flex items-center justify-center shrink-0">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round">
             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
           </svg>
         </div>
         <div>
           <p className="text-[14px] font-bold text-gray-900" style={{ fontFamily: "var(--font-sora)" }}>Ask about your results</p>
-          <p className="text-[12px] text-gray-400">I'm here to help you understand anything</p>
+          <p className="text-[12px] text-gray-400">I&apos;m here to help you understand anything</p>
         </div>
       </div>
 
       {/* Messages */}
-      <div className="px-5 py-4 flex flex-col gap-3 min-h-50 max-h-96 overflow-y-auto">
+      <div className="px-3 sm:px-5 py-3 sm:py-4 flex flex-col gap-2.5 sm:gap-3 min-h-50 max-h-80 sm:max-h-96 overflow-y-auto">
         {messages.length === 0 ? (
-          <div className="flex flex-col gap-2 py-2">
+          <div className="flex flex-col gap-2 py-1">
             <p className="text-[12px] text-gray-400 mb-1">Try asking:</p>
             {suggestions.map((q) => (
               <button key={q} onClick={() => onSend(q)}
-                className="text-left px-4 py-2.5 bg-gray-50 hover:bg-teal-50 hover:text-teal-700 text-[13px] text-gray-600 rounded-xl transition-colors border border-gray-100 hover:border-teal-200">
+                className="text-left px-3 sm:px-4 py-2 sm:py-2.5 bg-gray-50 hover:bg-teal-50 hover:text-teal-700 text-[13px] text-gray-600 rounded-xl transition-colors border border-gray-100 hover:border-teal-200">
                 {q}
               </button>
             ))}
@@ -195,7 +195,7 @@ function ChatSection({ messages, onSend, loading, sessionId }: {
         ) : (
           messages.map((msg, i) => (
             <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-              <div className={`max-w-[82%] px-4 py-3 rounded-2xl text-[14px] leading-relaxed
+              <div className={`max-w-[90%] sm:max-w-[82%] px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl text-[13px] sm:text-[14px] leading-relaxed
                 ${msg.role === "user"
                   ? "bg-teal-500 text-white rounded-br-sm"
                   : "bg-gray-50 text-gray-700 rounded-bl-sm border border-gray-100"}`}>
@@ -217,13 +217,13 @@ function ChatSection({ messages, onSend, loading, sessionId }: {
       </div>
 
       {/* Input */}
-      <div className="px-4 py-4 border-t border-gray-100 flex gap-3">
+      <div className="px-2 sm:px-4 py-2 sm:py-4 border-t border-gray-100 flex gap-2">
         <input type="text" value={input} onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
           placeholder="Ask anything about your report…"
-          className="flex-1 px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-[14px] text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-teal-400 focus:border-transparent" />
+          className="flex-1 px-3 sm:px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-[13px] sm:text-[14px] text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-teal-400 focus:border-transparent" />
         <button onClick={handleSend} disabled={loading || !input.trim()}
-          className="px-5 py-2.5 bg-teal-500 text-white text-[13px] font-bold rounded-xl hover:bg-teal-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="px-4 sm:px-5 py-2.5 bg-teal-500 text-white text-[13px] font-bold rounded-xl hover:bg-teal-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
           style={{ fontFamily: "var(--font-sora)" }}>
           Send
         </button>
@@ -632,7 +632,7 @@ export default function MainPage() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto px-8 py-14" style={{ fontFamily: "var(--font-inter)" }}>
+    <div className="max-w-3xl mx-auto px-3 sm:px-8 py-6 sm:py-14" style={{ fontFamily: "var(--font-inter)" }}>
       <div className="mb-10">
         <h1 className="text-[36px] font-extrabold text-gray-900 tracking-tight mb-2" style={{ fontFamily: "var(--font-sora)" }}>
           Hello, {firstName} 👋
