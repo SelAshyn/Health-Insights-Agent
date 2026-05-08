@@ -15,7 +15,7 @@ export default function Hero() {
           className="text-[clamp(38px,4.5vw,58px)] font-extrabold leading-[1.08] tracking-tight text-gray-900 mb-6"
           style={{ fontFamily: "var(--font-sora)" }}
         >
-          Your blood report,{" "}
+          Your confusing report,{" "}
           <span className="text-teal-500">clearly explained</span>
         </h1>
 
@@ -24,7 +24,7 @@ export default function Hero() {
           className="text-[17px] text-gray-500 leading-[1.75] mb-10 max-w-md"
           style={{ fontFamily: "var(--font-inter)" }}
         >
-          Upload any blood report and get an instant, plain-language analysis.
+          Upload any confusing report and get an instant, plain-language analysis.
           Ask follow-up questions. Understand what your numbers actually mean.
         </p>
 
