@@ -7,6 +7,7 @@ import os
 from dotenv import load_dotenv
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Any
 
@@ -32,6 +33,19 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── Global error handler — ensures CORS headers survive 500s ─────────────────
+# FastAPI's CORSMiddleware only adds headers to responses it processes.
+# If an unhandled exception bubbles up before the middleware can wrap it,
+# the browser sees a response with no CORS headers and blocks it.
+# This handler catches everything and re-adds the wildcard header.
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Internal server error: {str(exc)}"},
+        headers={"Access-Control-Allow-Origin": "*"},
+    )
 
 # ── Models ────────────────────────────────────────────────────────────────────
 
